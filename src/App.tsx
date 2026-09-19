@@ -317,7 +317,7 @@ export default function App() {
         {/* Title bar (Windows style) */}
         <div className={`h-[36px] flex items-center px-3 gap-2 shrink-0 z-30 ${theme === 'dark' ? 'bg-[#14141a]/90 border-b border-white/[0.06] backdrop-blur-xl' : 'bg-white/70 backdrop-blur-xl border-b border-black/5'}`} style={theme === 'glass' ? { backdropFilter: `blur(${glassStrength}px)` } : undefined}>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-black text-[11px] tracking-widest" style={{ background: `linear-gradient(135deg, ${accent}, #ff6b6b)`, boxShadow: `0 2px 10px ${accent}66` }}>KAYOR</div>
+            <img src="/kayorbrowse.png" alt="KAYOR" className="w-8 h-8 rounded-lg object-cover shadow-md border border-white/10" style={{ boxShadow: `0 2px 10px ${accent}55` }} />
             <span className="hidden sm:block text-[12px] font-semibold tracking-tight opacity-80">KAYOR BROWSER</span>
             <span className="hidden md:inline-flex items-center gap-1.5 ml-3 px-2 py-1 rounded-full text-[10px] font-bold tracking-widest bg-white/10 border border-white/10">BETA <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: accent }} /></span>
           </div>
@@ -1111,7 +1111,7 @@ function NewTabPage({ theme, accent, wallpaper, wallpapers, onPickWallpaper, gre
 function SettingsHeader({ onClose, accent }: any) {
   return (
     <div className="h-[56px] flex items-center gap-3 px-4 border-b border-black/5 dark:border-white/5 shrink-0" style={{ background: `linear-gradient(135deg, ${accent} 0%, #ff6b8a 100%)` }}>
-      <div className="w-8 h-8 rounded-xl bg-white grid place-items-center font-black text-xs" style={{ color: accent }}>K</div>
+      <img src="/kayorbrowse.png" alt="K" className="w-8 h-8 rounded-xl object-cover bg-white border border-white/20" />
       <div className="flex-1">
         <div className="text-white font-bold leading-none">Настройки KAYOR</div><div className="text-white/80 text-xs">Внешний вид • Приватность • Загрузки • Языки • Система</div>
       </div>
