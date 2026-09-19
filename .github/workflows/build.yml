@@ -96,10 +96,9 @@ jobs:
           echo "=== artifacts ==="; ls -R artifacts 2>&1 | head -n 100
           echo "=== searching exe ==="; find artifacts -name "*.exe" -type f 2>&1 | head -n 20
       - uses: softprops/action-gh-release@v2
-        if: hashFiles('artifacts/**/*.exe') != ''
+        if: hashFiles('artifacts/release/*.exe') != ''
         with:
           files: |
             artifacts/release/*.exe
-            artifacts/**/*.exe
           generate_release_notes: true
           fail_on_unmatched_files: false
