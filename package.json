@@ -1,7 +1,7 @@
 {
   "name": "kayor-browser",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "KAYOR — минималистичный красивый браузер с эффектом стекла",
   "author": "KAYOR",
