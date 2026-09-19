@@ -18,10 +18,13 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Build Windows (NSIS + Portable)
+        id: build_win
+        continue-on-error: true
         run: |
           npx electron-builder --win --x64 --publish=never 2>&1 | tee builder-win.log
           EXIT=${PIPESTATUS[0]}
           echo "builder exit $EXIT"
+          echo "exit=$EXIT" >> $GITHUB_OUTPUT
           cat builder-win.log
           exit $EXIT
         env:
@@ -31,7 +34,7 @@ jobs:
         run: |
           echo "=== release ==="; ls -R release 2>&1 || echo "no release"
           echo "=== dist ==="; ls -R dist 2>&1 | head -n 50
-          echo "=== builder log ==="; cat builder-win.log 2>&1 | tail -n 200 || echo "no log"
+          echo "=== builder log ==="; cat builder-win.log 2>&1 | tail -n 300 || echo "no log"
         shell: bash
       - uses: actions/upload-artifact@v4
         if: always()
@@ -79,7 +82,7 @@ jobs:
           retention-days: 14
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && always()
     needs: [build-win]
     runs-on: ubuntu-latest
     permissions:
