@@ -17,14 +17,31 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --win --x64 --publish=never
+      - name: Build Windows (NSIS + Portable)
+        run: |
+          npx electron-builder --win --x64 --publish=never 2>&1 | tee builder-win.log
+          EXIT=${PIPESTATUS[0]}
+          echo "builder exit $EXIT"
+          cat builder-win.log
+          exit $EXIT
+        env:
+          DEBUG: electron-builder
+      - name: List release
+        if: always()
+        run: |
+          echo "=== release ==="; ls -R release 2>&1 || echo "no release"
+          echo "=== dist ==="; ls -R dist 2>&1 | head -n 50
+          echo "=== builder log ==="; cat builder-win.log 2>&1 | tail -n 200 || echo "no log"
+        shell: bash
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: KAYOR-Windows
           path: |
-            release/*.exe
-            release/*.msi
-          if-no-files-found: error
+            release/
+            dist/
+            builder-win.log
+          if-no-files-found: warn
           retention-days: 14
 
   build-linux:
@@ -37,13 +54,27 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --linux --x64 --publish=never
+      - name: Build Linux
+        run: |
+          npx electron-builder --linux --x64 --publish=never 2>&1 | tee builder-linux.log
+          EXIT=${PIPESTATUS[0]}
+          echo "builder exit $EXIT"
+          cat builder-linux.log
+          exit $EXIT
+        env:
+          DEBUG: electron-builder
+      - name: List release
+        if: always()
+        run: |
+          echo "=== release ==="; ls -R release 2>&1 || echo "no release"
+          echo "=== builder log ==="; cat builder-linux.log 2>&1 | tail -n 200 || echo "no log"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: KAYOR-Linux
           path: |
-            release/*.AppImage
-            release/*.deb
+            release/
+            builder-linux.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -58,8 +89,10 @@ jobs:
         with:
           name: KAYOR-Windows
           path: ./artifacts
-      - run: ls -lh artifacts/
+      - run: ls -R artifacts 2>&1 || echo "no artifacts"
       - uses: softprops/action-gh-release@v2
+        if: hashFiles('artifacts/**/*') != ''
         with:
-          files: artifacts/*
+          files: artifacts/**/*
           generate_release_notes: true
+          fail_on_unmatched_files: false
