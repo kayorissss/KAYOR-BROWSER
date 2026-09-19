@@ -11,9 +11,23 @@
     <title>KAYOR — браузер</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Unbounded:wght@500;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+      #kayor-splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0a0f;color:#fff;z-index:9999;font-family:Inter,system-ui,sans-serif}
+      #kayor-splash .k-logo{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#ff253a,#1a0a0f);display:grid;place-items:center;font-family:Unbounded;font-weight:800;font-size:28px;letter-spacing:-1px}
+      #kayor-splash .k-bar{margin-top:16px;width:120px;height:2px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden}
+      #kayor-splash .k-bar i{display:block;height:100%;width:40%;background:#ff253a;animation:kayor-splash 1s ease-in-out infinite}
+      @keyframes kayor-splash{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="kayor-splash">
+        <div class="k-logo">K</div>
+        <div style="margin-top:12px;font-family:Unbounded;font-weight:800;letter-spacing:2px;font-size:14px;opacity:.9">KAYOR</div>
+        <div style="font-size:12px;opacity:.5;margin-top:4px">Запускается...</div>
+        <div class="k-bar"><i></i></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

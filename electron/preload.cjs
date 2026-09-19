@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('kayor', {
   minimize: () => ipcRenderer.invoke('window-control', 'minimize'),
   maximize: () => ipcRenderer.invoke('window-control', 'maximize'),
   close: () => ipcRenderer.invoke('window-control', 'close'),
+  setDefaultBrowser: () => ipcRenderer.invoke('set-default-browser'),
+  clearData: (type) => ipcRenderer.invoke('clear-data', type),
 })
