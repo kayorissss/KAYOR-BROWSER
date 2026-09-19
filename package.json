@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.3",
   "type": "module",
-  "description": "KAYOR — минималистичный красивый браузер с эффектом стекла",
+  "description": "KAYOR \u2014 \u043c\u0438\u043d\u0438\u043c\u0430\u043b\u0438\u0441\u0442\u0438\u0447\u043d\u044b\u0439 \u043a\u0440\u0430\u0441\u0438\u0432\u044b\u0439 \u0431\u0440\u0430\u0443\u0437\u0435\u0440 \u0441 \u044d\u0444\u0444\u0435\u043a\u0442\u043e\u043c \u0441\u0442\u0435\u043a\u043b\u0430",
   "author": "KAYOR",
   "main": "electron/main.cjs",
   "scripts": {
@@ -45,8 +45,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/kayorbrowse.png",
-      "public/favicon.ico",
+      "public/**/*",
       "package.json"
     ],
     "directories": {
@@ -54,37 +53,19 @@
       "buildResources": "public"
     },
     "win": {
-      "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
-      ],
-      "icon": "public/favicon.ico",
-      "publisherName": "KAYOR"
+      "target": "nsis",
+      "icon": "public/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "KAYOR Browser",
-      "installerIcon": "public/favicon.ico",
-      "uninstallerIcon": "public/favicon.ico",
-      "installerHeaderIcon": "public/favicon.ico",
-      "uninstallDisplayName": "KAYOR Browser"
-    },
-    "portable": {
-      "artifactName": "KAYOR-Browser-Portable-${version}.exe"
+      "shortcutName": "KAYOR Browser"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": "AppImage",
       "icon": "public/kayorbrowse.png",
       "category": "Network"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "kayorissss",
-      "repo": "KAYOR-BROWSER"
     }
   }
 }
