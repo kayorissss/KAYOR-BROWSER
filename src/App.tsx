@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Plus, X, Search, Star, Lock, ShieldCheck, ChevronLeft, ChevronRight, RotateCw, Home,
+  Plus, X, Search, Star, Lock, ShieldCheck, ChevronLeft, ChevronRight, RotateCw, Home, Minus, Square,
   Bookmark, Download, Clock, History, Settings, Palette, Moon, Sun,
   Pin, Copy, ExternalLink, Sparkles, HardDrive, Check, Upload, User,
   Shield, EyeOff, Image as ImageIcon, StickyNote, ListChecks, Trash2,
-  Globe, Zap, Languages, FolderOpen, Cpu, Monitor, Info, ToggleLeft
+  Globe, Zap, Languages, FolderOpen, Cpu, Monitor, Info, ToggleLeft, AlertTriangle, Loader2, CloudSun
 } from 'lucide-react'
 
 type Tab = { id: string; title: string; url: string; favicon: string; pinned?: boolean }
@@ -20,6 +20,14 @@ const WALLPAPERS = [
 ]
 
 const LOGO = "kayorbrowse.png"
+
+function faviconFor(url:string){
+  try{
+    const {hostname}=new URL(url.startsWith('http')?url:'https://'+url)
+    if(!hostname.includes('.')||hostname==='kayor') return ''
+    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`
+  }catch{ return '' }
+}
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v:boolean)=>void }){
   return <button onClick={()=> onChange(!checked)} className={`w-9 h-5 rounded-full p-0.5 flex transition ${checked?'bg-[#ff253a] justify-end':'bg-white/20 justify-start'}`}><span className="w-4 h-4 rounded-full bg-white shadow"/></button>
@@ -57,7 +65,9 @@ export default function App(){
   const [showTabMenu, setShowTabMenu] = useState<{x:number;y:number;id:string}|null>(null)
   const omniboxRef = useRef<HTMLInputElement>(null)
   const webviewRef = useRef<any>(null)
-  const [time] = useState(new Date())
+  const [timeNow, setTimeNow] = useState(new Date())
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<{code:number;desc:string;url:string}|null>(null)
 
   // new settings
   const [adBlock, setAdBlock] = useState(()=> localStorage.getItem('kayor_adblock')!=='0')
@@ -89,12 +99,7 @@ export default function App(){
   useEffect(()=> localStorage.setItem('kayor_https', httpsOnly?'1':'0'),[httpsOnly])
   useEffect(()=> localStorage.setItem('kayor_dnt', dnt?'1':'0'),[dnt])
 
-  // sync omnibox with active tab when switching
-  useEffect(()=>{
-    if(!focused){
-      // keep display in sync, but don't overwrite while typing
-    }
-  },[activeId])
+  useEffect(()=>{ const i=setInterval(()=> setTimeNow(new Date()), 30000); return ()=> clearInterval(i)},[])
 
   useEffect(()=>{
     const h=(e:KeyboardEvent)=>{
@@ -107,13 +112,22 @@ export default function App(){
     window.addEventListener('keydown',h); return()=> window.removeEventListener('keydown',h)
   },[activeId, closed])
 
-  // webview events
+  // webview events — loading / error / title / favicon
   useEffect(()=>{
     const wv = webviewRef.current
     if(!wv || isNewTab || !isElectron) return
+    const onStart = ()=>{ setLoading(true); setLoadError(null)}
+    const onStop = ()=> setLoading(false)
+    const onFail = (e:any)=>{
+      // e.errorCode -3 = aborted (ignore), -105 no name, -106 internet off
+      if(e.errorCode===-3 || e.errorCode===-300) return
+      setLoading(false)
+      setLoadError({code:e.errorCode, desc:e.errorDescription||'ERR_FAILED', url:e.validatedURL||activeTab?.url||''})
+    }
     const onNavigate = (e:any)=>{
       const url = e.url || wv.getURL?.()
       if(!url || url==='about:blank') return
+      setLoadError(null)
       if(url!==activeTab?.url){
         setTabs(ts=> ts.map(t=> t.id===activeId ? {...t, url, title: (()=>{try{return new URL(url).hostname}catch{return url}})(), favicon:'🌐'} : t))
         setHistory(h=> [{id:Math.random().toString(36).slice(2), title:url, url, time:'сейчас'}, ...h].slice(0,100))
@@ -125,20 +139,29 @@ export default function App(){
     }
     const onFavicon = (e:any)=>{
       const favicons = e.favicons
-      if(favicons && favicons[0]) setTabs(ts=> ts.map(t=> t.id===activeId ? {...t, favicon:'🌐'} : t))
+      if(favicons && favicons[0]){
+        // store real favicon by using google s2 as fallback, but could store favicons[0] directly
+        // we keep emoji but will render via faviconFor(url) so no need to store
+      }
     }
     const onNewWindow = (e:any)=>{
       const url = e.url
       if(url){ e.preventDefault?.(); createTab(url) }
     }
+    wv.addEventListener('did-start-loading', onStart)
+    wv.addEventListener('did-stop-loading', onStop)
+    wv.addEventListener('did-fail-load', onFail)
     wv.addEventListener('did-navigate', onNavigate)
     wv.addEventListener('did-navigate-in-page', onNavigate)
     wv.addEventListener('page-title-updated', onTitle)
     wv.addEventListener('page-favicon-updated', onFavicon)
     wv.addEventListener('new-window', onNewWindow as any)
-    // @ts-ignore - electron 30 uses did-create-window
+    // @ts-ignore
     wv.addEventListener('did-create-window', onNewWindow as any)
     return ()=>{
+      wv.removeEventListener('did-start-loading', onStart)
+      wv.removeEventListener('did-stop-loading', onStop)
+      wv.removeEventListener('did-fail-load', onFail)
       wv.removeEventListener('did-navigate', onNavigate)
       wv.removeEventListener('did-navigate-in-page', onNavigate)
       wv.removeEventListener('page-title-updated', onTitle)
@@ -156,8 +179,9 @@ export default function App(){
       const current = wv.getURL?.()
       if(current !== activeTab?.url && activeTab?.url && !activeTab.url.startsWith('kayor://')){
         wv.loadURL?.(activeTab.url)
-        // fallback src attr
         wv.src = activeTab.url
+        setLoadError(null)
+        setLoading(true)
       }
     }catch{}
   },[activeTab?.url, isNewTab, isElectron])
@@ -167,7 +191,7 @@ export default function App(){
     const isInternal=url.startsWith('kayor://')
     const title=isInternal?'Новая вкладка':(()=>{try{return new URL(url.startsWith('http')?url:'https://'+url).hostname}catch{return url}})()
     const t:Tab={id, url, title, favicon: isInternal?'✦':'🌐'}
-    setTabs(x=>[...x,t]); setActiveId(id)
+    setTabs(x=>[...x,t]); setActiveId(id); setLoadError(null); setLoading(false)
     if(!isInternal) setHistory(h=>[{id:Math.random().toString(36).slice(2), title, url, time: new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})},...h].slice(0,100))
   }
   function closeTab(id:string){
@@ -191,8 +215,7 @@ export default function App(){
     } else if(!url.startsWith('http')&&!url.startsWith('kayor://')) url='https://'+url
     setTabs(ts=> ts.map(t=> t.id===activeId?{...t,url, title: url.startsWith('kayor://')?'Новая вкладка':(()=>{try{return new URL(url).hostname}catch{return url}})(), favicon: url.startsWith('kayor://')?'✦':'🌐'}:t))
     if(!url.startsWith('kayor://')) setHistory(h=>[{id:Math.random().toString(36).slice(2), title:url, url, time:'сейчас'},...h].slice(0,100))
-    setOmnibox(''); setFocused(false)
-    // force webview load
+    setOmnibox(''); setFocused(false); setLoadError(null); setLoading(true)
     setTimeout(()=>{
       const wv = webviewRef.current
       if(wv && !url.startsWith('kayor://') && isElectron){
@@ -219,11 +242,19 @@ export default function App(){
   }
   function handleReload(){
     const wv = webviewRef.current
+    if(loadError){ setLoadError(null); setLoading(true) }
     if(isElectron && wv && !isNewTab){
       try{ wv.reload?.() }catch{}
     } else {
       window.location.reload()
     }
+  }
+  function winCtrl(action:'minimize'|'maximize'|'close'){
+    // @ts-ignore
+    const kayor = (window as any).kayor
+    if(kayor?.windowControl) kayor.windowControl(action)
+    else if(kayor?.minimize && action==='minimize') kayor.minimize()
+    else console.log('winCtrl',action)
   }
 
   const suggestions = useMemo(()=>{
@@ -243,28 +274,39 @@ export default function App(){
 
       <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration: animations?0.4:0}} className={`flex-1 flex flex-col overflow-hidden ${incognito ? 'bg-[#1a1030]' : theme==='dark' ? 'bg-[#0a0a0f] text-zinc-100' : 'bg-[#f6f6f7] text-zinc-900'} ${incognito ? 'ring-2 ring-violet-500/20' : ''}`}>
 
-        {/* TAB BAR — одна линия с окном */}
-        <div className={`h-10 flex items-center gap-1 px-2 shrink-0 border-b ${compactMode?'h-8':''} ${incognito ? 'bg-[#1a1030] border-violet-900/30' : 'bg-[#0f0f14] border-white/5'}`}>
-          {/* ЛОГО — иконка слева как в Chrome/Yandex */}
-          <div className="flex items-center gap-1.5 shrink-0 ml-1">
+        {/* Драгабельная зона для Electron — заголовок тянет окно */}
+        <div className={`h-10 flex items-center gap-1 px-2 shrink-0 border-b ${compactMode?'h-8':''} ${incognito ? 'bg-[#1a1030] border-violet-900/30' : 'bg-[#0f0f14] border-white/5'}`} style={{ WebkitAppRegion: 'drag' } as any}>
+          {/* ЛОГО — иконка слева как в Chrome/Yandex — НЕ драгабельная */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
             <img src={LOGO} alt="KAYOR" className="w-6 h-6 rounded-md object-cover" onError={(e)=> (e.currentTarget.style.display='none')} />
             <span className="hidden lg:block text-[11px] font-extrabold tracking-wide opacity-70" style={{fontFamily:'Unbounded'}}>KAYOR</span>
+            {incognito && <span className="ml-1 hidden sm:inline-flex items-center gap-1 text-[10px] bg-violet-600 text-white px-1.5 py-0.5 rounded-full"><EyeOff size={10}/>Инкогнито</span>}
           </div>
-          <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none ml-2">
-            {tabs.map(tab=>(
+          <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none ml-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            {tabs.map(tab=>{
+              const isActive = activeId===tab.id
+              const fav = faviconFor(tab.url)
+              const isTabLoading = isActive && loading && !isNewTab
+              return (
               <motion.div
                 key={tab.id}
                 layout={animations}
                 initial={{opacity:0, y:-6}} animate={{opacity:1, y:0}} transition={{duration:0.18}}
-                onClick={()=> setActiveId(tab.id)}
+                onClick={()=> {setActiveId(tab.id); setLoadError(null)}}
                 onMouseDown={e=> { if(e.button===1){ e.preventDefault(); closeTab(tab.id)} }}
                 onContextMenu={e=> { e.preventDefault(); setShowTabMenu({x:e.clientX, y:e.clientY, id:tab.id})}}
                 className={`group flex items-center gap-2 px-3 h-7 rounded-full text-[13px] cursor-pointer shrink-0 border relative
-                  ${activeId===tab.id ? (incognito?'bg-violet-600 text-white border-violet-500' : 'bg-[#23232b] text-white border-white/10') : 'bg-white/[0.06] text-zinc-400 hover:text-zinc-200 border-white/5 hover:bg-white/10'}
+                  ${isActive ? (incognito?'bg-violet-600 text-white border-violet-500' : 'bg-[#23232b] text-white border-white/10') : 'bg-white/[0.06] text-zinc-400 hover:text-zinc-200 border-white/5 hover:bg-white/10'}
                   ${tab.pinned ? 'w-9 justify-center px-2' : 'min-w-[140px] max-w-[200px]'}`}
-                style={{fontFamily: activeId===tab.id?'Unbounded, sans-serif':'Inter'}}
+                style={{fontFamily: isActive?'Unbounded, sans-serif':'Inter'}}
               >
-                <span className="text-[11px] leading-none">{tab.favicon}</span>
+                <span className="w-3.5 h-3.5 grid place-items-center shrink-0">
+                  {isTabLoading ? <Loader2 size={12} className="animate-spin"/> :
+                    tab.url.startsWith('kayor://') ? <span className="text-[11px] leading-none">{tab.favicon}</span> :
+                    fav ? <img src={fav} width={14} height={14} className="rounded-sm object-contain" onError={e=> (e.currentTarget.style.display='none')} /> :
+                    <span className="text-[11px]">{tab.favicon}</span>
+                  }
+                </span>
                 {!tab.pinned && <span className="truncate flex-1 font-medium text-[12px]">{tab.title}</span>}
                 {tab.pinned && <Pin size={10} className="opacity-60 absolute -top-1 -right-1 bg-white text-zinc-900 rounded-full p-0.5 w-3 h-3" />}
                 {!tab.pinned && (
@@ -273,37 +315,50 @@ export default function App(){
                   </button>
                 )}
               </motion.div>
-            ))}
+            )})}
             <button onClick={()=>createTab()} className="w-7 h-7 grid place-items-center rounded-full bg-white/5 hover:bg-white/10 border border-white/5 shrink-0 ml-1">
               <Plus size={14}/>
             </button>
           </div>
 
-          <div className="flex items-center gap-1 ml-2 shrink-0">
-            <button onClick={()=> setIncognito(!incognito)} className={`hidden sm:flex items-center gap-1 px-2.5 h-7 rounded-full text-xs border ${incognito?'bg-violet-600 text-white border-violet-500':'bg-white/5 border-white/10 hover:bg-white/10'}`}>
+          <div className="flex items-center gap-1 ml-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <button onClick={()=> setIncognito(!incognito)} className={`flex items-center gap-1 px-2.5 h-7 rounded-full text-xs border ${incognito?'bg-violet-600 text-white border-violet-500':'bg-white/5 border-white/10 hover:bg-white/10'}`}>
               <EyeOff size={12}/> {incognito?'Инкогнито':'Обычный'}
             </button>
-            <div className="w-px h-5 bg-white/10 mx-1 hidden md:block"/>
-            <button onClick={()=> setShowSettings(true)} className="w-7 h-7 grid place-items-center rounded-full hover:bg-white/10"><Settings size={14}/></button>
-            <div className="hidden md:flex items-center gap-0.5 ml-1">
-              <button onClick={()=> (window as any).kayor && (window as any).electron?.minimize?.()} className="w-8 h-8 grid place-items-center hover:bg-white/10 rounded-md"><span className="text-[14px]">—</span></button>
-              <button className="w-8 h-8 grid place-items-center hover:bg-white/10 rounded-md"><span className="text-[12px]">□</span></button>
-              <button className="w-8 h-8 grid place-items-center hover:bg-red-500 hover:text-white rounded-md"><X size={14}/></button>
+            <div className="w-px h-5 bg-white/10 mx-1 hidden sm:block"/>
+            <button onClick={()=> setShowSettings(true)} title="Настройки" className="w-7 h-7 grid place-items-center rounded-full hover:bg-white/10"><Settings size={14}/></button>
+            {/* ОКОННЫЕ КНОПКИ — всегда видны, как в Chrome, работают в Electron */}
+            <div className="flex items-center gap-0.5 ml-1">
+              <button onClick={()=> winCtrl('minimize')} title="Свернуть" className="w-8 h-8 grid place-items-center hover:bg-white/10 rounded-md"><Minus size={14}/></button>
+              <button onClick={()=> winCtrl('maximize')} title="Развернуть" className="w-8 h-8 grid place-items-center hover:bg-white/10 rounded-md"><Square size={12}/></button>
+              <button onClick={()=> winCtrl('close')} title="Закрыть" className="w-8 h-8 grid place-items-center hover:bg-red-500 hover:text-white rounded-md"><X size={14}/></button>
             </div>
           </div>
         </div>
 
-        {/* OMNIBOX */}
-        <div className={`h-12 flex items-center gap-2 px-3 shrink-0 border-b ${incognito?'bg-[#1a1030] border-violet-900/20':'bg-[#18181f] border-white/5'}`}>
+        {/* Инкогнито баннер — чтобы сразу понятно что приват */}
+        {incognito && !isNewTab && (
+          <div className="h-7 flex items-center justify-center gap-2 text-xs bg-violet-600 text-white px-3">
+            <EyeOff size={12}/> Режим инкогнито — история и куки не сохраняются • <button onClick={()=> setIncognito(false)} className="underline">Выйти</button>
+          </div>
+        )}
+
+        {/* OMNIBOX + прогресс */}
+        <div className={`h-12 flex items-center gap-2 px-3 shrink-0 border-b relative ${incognito?'bg-[#1a1030] border-violet-900/20':'bg-[#18181f] border-white/5'}`}>
+          {/* прогресс-бар */}
+          {loading && <div className="absolute left-0 top-0 h-0.5 bg-[#ff253a] animate-pulse" style={{width:'100%', animation:'kayor-load 1.2s ease-in-out infinite'}}/>}
+          <style>{`@keyframes kayor-load{0%{transform:translateX(-100%)}50%{transform:translateX(0)}100%{transform:translateX(100%)}}`}</style>
           <div className="flex items-center gap-1">
-            <button onClick={handleBack} className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"><ChevronLeft size={16}/></button>
-            <button onClick={handleForward} className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10 opacity-60"><ChevronRight size={16}/></button>
-            <button onClick={handleReload} className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"><RotateCw size={14}/></button>
-            {showHomeButton && <button onClick={()=> navigate('kayor://newtab')} className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"><Home size={14}/></button>}
+            <button onClick={handleBack} title="Назад" className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"><ChevronLeft size={16}/></button>
+            <button onClick={handleForward} title="Вперёд" className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10 opacity-60"><ChevronRight size={16}/></button>
+            <button onClick={handleReload} title="Обновить" className={`w-8 h-8 grid place-items-center rounded-full hover:bg-white/10 ${loading?'animate-spin':''}`}><RotateCw size={14}/></button>
+            {showHomeButton && <button onClick={()=> navigate('kayor://newtab')} title="Домой" className="w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"><Home size={14}/></button>}
           </div>
 
           <div className={`flex-1 flex items-center gap-2 px-3 h-9 rounded-full border relative ${incognito?'bg-[#2a1a4a] border-violet-800':'bg-[#23232b] border-white/10'} ${focused?'ring-2 ring-white/10':''}`}>
-            <span className={`w-5 h-5 grid place-items-center rounded-full ${activeTab?.url.startsWith('https://')?'bg-emerald-500':'bg-white/10'}`}><Lock size={10} className="text-white"/></span>
+            <span className={`w-5 h-5 grid place-items-center rounded-full shrink-0 ${loading?'bg-[#ff253a] animate-pulse': activeTab?.url.startsWith('https://')?'bg-emerald-500':'bg-white/10'}`}>
+              {loading ? <Loader2 size={10} className="text-white animate-spin"/> : <Lock size={10} className="text-white"/>}
+            </span>
             <input
               ref={omniboxRef}
               value={displayValue}
@@ -328,7 +383,7 @@ export default function App(){
               <div className="absolute left-0 right-0 top-[44px] rounded-2xl border shadow-2xl overflow-hidden z-30 bg-[#1e1e26] border-white/10">
                 {suggestions.map((s,i)=>(
                   <button key={i} onClick={()=> navigate(s.url)} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 text-left">
-                    <Search size={14} className="opacity-40"/>
+                    {s.url.startsWith('http') ? (()=>{const f=faviconFor(s.url); return f ? <img src={f} width={14} height={14} className="rounded-sm"/> : <Search size={14} className="opacity-40"/> })() : <Search size={14} className="opacity-40"/>}
                     <span className="flex-1 truncate text-[13px]">{s.label}</span>
                     <span className="text-xs opacity-40 truncate max-w-[180px]">{s.sub}</span>
                   </button>
@@ -338,20 +393,22 @@ export default function App(){
             )}
           </div>
 
-          <button onClick={()=> setSidebarOpen(!sidebarOpen)} className={`w-8 h-8 grid place-items-center rounded-full border ${sidebarOpen?'bg-white text-zinc-900':'bg-white/5 border-white/10 hover:bg-white/10'}`}><Bookmark size={14}/></button>
+          <button onClick={()=> setSidebarOpen(!sidebarOpen)} title="Боковая панель" className={`w-8 h-8 grid place-items-center rounded-full border ${sidebarOpen?'bg-white text-zinc-900':'bg-white/5 border-white/10 hover:bg-white/10'}`}><Bookmark size={14}/></button>
         </div>
 
-        {/* Bookmarks bar — скрыта по умолчанию */}
+        {/* Bookmarks bar — по кнопке, с иконками */}
         {showBookmarksBar && (
           <div className="h-8 flex items-center gap-1 px-3 border-b bg-[#14141a] border-white/5 overflow-x-auto">
-            {bookmarks.length===0 ? <span className="text-xs opacity-40">Нет закладок — нажми ★ чтобы добавить</span> :
-              bookmarks.map(b=>(
-                <button key={b.id} onClick={()=> navigate(b.url)} className="px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-xs shrink-0 flex items-center gap-1">
-                  <span className="opacity-60">★</span> {b.title}
+            {bookmarks.length===0 ? <span className="text-xs opacity-40">Нет закладок — нажми ★ чтобы добавить • перетащи ссылку сюда</span> :
+              bookmarks.map(b=>{
+                const f=faviconFor(b.url)
+                return (
+                <button key={b.id} onClick={()=> navigate(b.url)} className="px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-xs shrink-0 flex items-center gap-1.5">
+                  {f ? <img src={f} width={12} height={12} className="rounded-sm"/> : <span className="opacity-60">★</span>} {b.title}
                 </button>
-              ))
+              )})
             }
-            <button onClick={()=> setShowBookmarksBar(false)} className="ml-auto text-xs opacity-40 hover:opacity-80">Скрыть</button>
+            <button onClick={()=> setShowBookmarksBar(false)} className="ml-auto text-xs opacity-40 hover:opacity-80 shrink-0">Скрыть</button>
           </div>
         )}
 
@@ -359,8 +416,26 @@ export default function App(){
         <div className="flex-1 flex overflow-hidden relative">
           <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-[#0a0a0f] relative">
             {isNewTab ? (
-              <div className="flex-1 overflow-auto relative flex flex-col items-center justify-center p-8" style={{background: wallpaper.bg}}>
-                <motion.div initial={{opacity:0, y:12}} animate={{opacity:1, y:0}} transition={{duration: animations?0.5:0, delay:0.1}} className="w-full max-w-[640px] flex flex-col items-center gap-6">
+              incognito ? (
+                // Инкогнито новая вкладка — как в Chrome: тёмная с очками
+                <div className="flex-1 overflow-auto relative flex flex-col items-center justify-center p-8 bg-[#1a1030]">
+                  <div className="absolute inset-0 opacity-10" style={{background:`radial-gradient(800px 400px at 50% 0%, #7c3aed 0%, transparent 60%)`}}/>
+                  <motion.div initial={{opacity:0, y:12}} animate={{opacity:1, y:0}} transition={{duration: animations?0.5:0}} className="w-full max-w-[560px] flex flex-col items-center gap-6 text-center relative">
+                    <div className="w-20 h-20 rounded-3xl bg-violet-600 grid place-items-center shadow-xl"><EyeOff size={32} className="text-white"/></div>
+                    <div>
+                      <h1 className="text-[26px] font-extrabold tracking-tight text-white" style={{fontFamily:'Unbounded'}}>Инкогнито</h1>
+                      <p className="text-sm text-violet-200/70 mt-2 max-w-[460px]">История просмотров, куки и данные сайтов не сохранятся. Загрузки и закладки — сохранятся. Провайдер и сайты всё равно могут вас видеть.</p>
+                    </div>
+                    <div className="w-full p-4 rounded-2xl bg-white/5 border border-violet-500/20 text-left text-sm space-y-2">
+                      <div className="font-medium text-white flex items-center gap-2"><ShieldCheck size={14}/> Что скрывает</div>
+                      <div className="text-violet-200/60 text-xs">• Не пишется история • Удаляются куки после закрытия • Поиск без персонализации</div>
+                    </div>
+                    <button onClick={()=> setIncognito(false)} className="px-5 py-2 rounded-full bg-white text-zinc-900 text-sm font-medium">Выйти из инкогнито</button>
+                  </motion.div>
+                </div>
+              ) : (
+              <div className="flex-1 overflow-auto relative flex flex-col items-center justify-center p-6 md:p-8" style={{background: wallpaper.bg}}>
+                <motion.div initial={{opacity:0, y:12}} animate={{opacity:1, y:0}} transition={{duration: animations?0.5:0, delay:0.1}} className="w-full max-w-[640px] flex flex-col items-center gap-5">
                   <img src={LOGO} alt="KAYOR" className="w-20 h-20 rounded-2xl shadow-xl object-cover" onError={e=> (e.currentTarget.style.display='none')} />
                   <div className="text-center">
                     <h1 className="text-[28px] font-extrabold tracking-tight text-white" style={{fontFamily:'Unbounded'}}>KAYOR</h1>
@@ -384,51 +459,89 @@ export default function App(){
                       {t:'YouTube', u:'https://youtube.com', c:'#ff0000', l:'Y'},
                       {t:'Figma', u:'https://figma.com', c:'#1abcf2', l:'F'},
                       {t:'GitHub', u:'https://github.com', c:'#24292e', l:'G'},
-                      {t:'Яндекс', u:'https://ya.ru', c:'#ffcc00', l:'Я'},
-                      {t:'Notion', u:'https://notion.so', c:'#000', l:'N'},
+                      {t:'Яндекс', u:'https://ya.ru', c:'#ffcc00', l:'Я', col:'#000'},
+                      {t:'Notion', u:'https://notion.so', c:'#fff', l:'N', col:'#000'},
                       {t:'Dribbble', u:'https://dribbble.com', c:'#ea4c89', l:'D'},
                       {t:'Авито', u:'https://avito.ru', c:'#00aaff', l:'A'},
                       {t:'Wiki', u:'https://wikipedia.org', c:'#636466', l:'W'},
-                    ].map(s=>(
-                      <button key={s.t} onClick={()=> navigate(s.u)} className="flex flex-col items-center gap-2 group">
-                        <span className="w-12 h-12 rounded-2xl grid place-items-center text-white font-bold shadow group-hover:scale-105 transition" style={{background:s.c}}>{s.l}</span>
+                    ].map(s=>{
+                      const f=faviconFor(s.u)
+                      return (
+                      <button key={s.t} onClick={()=> navigate(s.u)} className="flex flex-col items-center gap-1.5 group">
+                        <span className="w-12 h-12 rounded-2xl grid place-items-center text-white font-bold shadow group-hover:scale-105 transition overflow-hidden relative border border-white/10" style={{background:s.c, color:(s as any).col||'#fff'}}>
+                          {f ? <img src={f} width={20} height={20} className="object-contain" onError={e=> (e.currentTarget.style.display='none')} /> : null}
+                          <span className={f? 'absolute opacity-0':' '}>{s.l}</span>
+                        </span>
                         <span className="text-xs text-white/70 group-hover:text-white">{s.t}</span>
                       </button>
-                    ))}
+                    )})}
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs text-white/40">
-                    <span>{time.toLocaleDateString('ru-RU',{weekday:'long', day:'numeric', month:'long'})}</span>
-                    <span>•</span><span className="flex items-center gap-1">⛅ 18° Москва</span>
+                  {/* Красивые дата и погода — стеклянные карточки */}
+                  <div className="w-full grid grid-cols-2 gap-3 mt-1">
+                    <div className="rounded-2xl bg-white/10 backdrop-blur-xl border border-white/10 p-3 flex items-center gap-3 text-white">
+                      <div className="w-10 h-10 rounded-xl bg-white text-zinc-900 grid place-items-center"><Clock size={18}/></div>
+                      <div>
+                        <div className="text-[15px] font-bold leading-none">{timeNow.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
+                        <div className="text-xs opacity-70 capitalize">{timeNow.toLocaleDateString('ru-RU',{weekday:'long', day:'numeric', month:'long'})}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white backdrop-blur-xl border border-white/20 p-3 flex items-center gap-3 text-zinc-900">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 grid place-items-center text-white"><CloudSun size={18}/></div>
+                      <div>
+                        <div className="text-[15px] font-bold leading-none">18° • Солнечно</div>
+                        <div className="text-xs opacity-60">Москва • Влажность 42%</div>
+                      </div>
+                    </div>
                   </div>
-                  {!isElectron && <div className="text-xs text-amber-200/70 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1">Предпросмотр в браузере: сайты через iframe могут блокироваться — в приложении всё откроется</div>}
+                  {!isElectron && <div className="text-xs text-amber-200/70 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1">Предпросмотр: сайты через iframe могут блокироваться — в приложении всё откроется</div>}
                 </motion.div>
 
-                <button onClick={()=> setShowSettings(true)} className="absolute bottom-4 right-4 w-9 h-9 grid place-items-center rounded-full bg-white/10 hover:bg-white/15 text-white border border-white/10">
+                <button onClick={()=> setShowSettings(true)} title="Настроить фон" className="absolute bottom-4 right-4 w-9 h-9 grid place-items-center rounded-full bg-white/10 hover:bg-white/15 text-white border border-white/10">
                   <Palette size={14}/>
                 </button>
               </div>
+              )
             ) : (
-              <div className="flex-1 relative bg-white flex flex-col">
-                {/* БРАУЗЕР: webview в Electron, iframe в web-превью */}
-                {isElectron ? (
-                  // @ts-ignore
-                  <webview
-                    ref={webviewRef}
-                    src={activeTab?.url}
-                    className="w-full h-full border-0 flex-1"
-                    partition={incognito ? "incognito" : "persist:kayor"}
-                    allowpopups
-                    webpreferences="allowRunningInsecureContent=no"
-                  />
-                ) : (
-                  <iframe src={activeTab?.url} className="w-full h-full border-0 flex-1" title="page" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads" allow="fullscreen" />
-                )}
-                {/* фолбэк подсказка если iframe заблокирован */}
-                {!isElectron && (
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-[#1e1e26] border border-white/10 rounded-full px-3 py-1.5 text-xs flex items-center gap-2 shadow-xl">
-                    <Globe size={12} className="opacity-60"/> Если страница не загрузилась — <button onClick={()=> window.open(activeTab?.url,'_blank')} className="underline">открыть в системе</button>
+              <div className="flex-1 relative bg-[#1a1a1a] flex flex-col">
+                {loadError ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#0a0a0f] text-white text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 grid place-items-center mb-4"><AlertTriangle size={28} className="text-red-400"/></div>
+                    <h2 className="text-lg font-bold" style={{fontFamily:'Unbounded'}}>Не удалось открыть</h2>
+                    <p className="text-sm opacity-60 mt-2 max-w-[520px] break-all">{loadError.url}</p>
+                    <p className="text-xs opacity-40 mt-1">{loadError.desc} • код {loadError.code}</p>
+                    <p className="text-xs opacity-50 mt-3">Проверьте адрес, подключение к интернету или попробуйте поиск.</p>
+                    <div className="flex gap-2 mt-5">
+                      <button onClick={handleReload} className="px-4 py-2 rounded-full bg-[#ff253a] text-white text-sm flex items-center gap-2"><RotateCw size={14}/> Повторить</button>
+                      <button onClick={()=> navigate('kayor://newtab')} className="px-4 py-2 rounded-full bg-white/10 border border-white/10 text-sm">Домой</button>
+                      <button onClick={()=> navigate(loadError.url)} className="px-4 py-2 rounded-full bg-white text-zinc-900 text-sm">Искать в {engine}</button>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {loading && (
+                      <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/10 overflow-hidden z-10">
+                        <div className="h-full w-1/2 bg-[#ff253a]" style={{animation: animations?'kayor-shimmer 1.1s ease-in-out infinite':''}}/>
+                      </div>
+                    )}
+                    {isElectron ? (
+                      // @ts-ignore
+                      <webview
+                        ref={webviewRef}
+                        src={activeTab?.url}
+                        className="w-full h-full border-0 flex-1 bg-white"
+                        partition={incognito ? "incognito" : "persist:kayor"}
+                        allowpopups
+                      />
+                    ) : (
+                      <iframe src={activeTab?.url} className="w-full h-full border-0 flex-1 bg-white" title="page" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads" allow="fullscreen" />
+                    )}
+                    {!isElectron && (
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-[#1e1e26] border border-white/10 rounded-full px-3 py-1.5 text-xs flex items-center gap-2 shadow-xl">
+                        <Globe size={12} className="opacity-60"/> Если страница не загрузилась — <button onClick={()=> window.open(activeTab?.url,'_blank')} className="underline">открыть в системе</button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -458,12 +571,12 @@ export default function App(){
                   <button onClick={()=>{setShowSettings(true); setSettingsTab('appearance'); setShowMenu(false)}} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 text-left text-sm"><Palette size={14}/> Внешний вид</button>
                   <button onClick={()=>{setShowSettings(true); setShowMenu(false)}} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 text-left text-sm"><Settings size={14}/> Настройки</button>
                 </div>
-                <div className="px-3 py-2 bg-white/5 text-xs opacity-40">KAYOR 1.0.9 • Chromium 124 • {isElectron?'Electron':'Web'}</div>
+                <div className="px-3 py-2 bg-white/5 text-xs opacity-40">KAYOR 1.0.10 • Chromium 124 • {isElectron?'Electron':'Web'}</div>
               </div>
             )}
           </div>
 
-          {/* Sidebar — drawer, hidden by default */}
+          {/* Sidebar — drawer */}
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{x:320, opacity:0}} animate={{x:0, opacity:1}} exit={{x:320, opacity:0}} transition={{type:'spring', damping:28, stiffness:300}} className="w-[320px] shrink-0 border-l bg-[#14141a] border-white/5 flex flex-col absolute right-0 top-0 bottom-0 z-20 shadow-2xl">
@@ -484,12 +597,14 @@ export default function App(){
                     <div className="space-y-3">
                       <button onClick={()=> setBookmarks(b=>[...b,{id:Math.random().toString(36).slice(2), title:activeTab?.title||'Закладка', url:activeTab?.url||''}])} className="w-full py-2 rounded-full bg-[#ff253a] text-white text-sm font-medium">+ Добавить страницу</button>
                       {bookmarks.length===0 ? <div className="text-sm opacity-40 text-center py-12">Нет закладок</div> :
-                        <div className="space-y-1">{bookmarks.map(b=>(
+                        <div className="space-y-1">{bookmarks.map(b=>{
+                          const f=faviconFor(b.url)
+                          return (
                           <div key={b.id} className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-white/5 group">
-                            <span className="text-xs">★</span><button onClick={()=> navigate(b.url)} className="flex-1 text-left truncate text-sm">{b.title}</button>
+                            {f? <img src={f} width={14} height={14} className="rounded-sm"/> : <span className="text-xs">★</span>}<button onClick={()=> navigate(b.url)} className="flex-1 text-left truncate text-sm">{b.title}</button>
                             <button onClick={()=> setBookmarks(x=>x.filter(y=>y.id!==b.id))} className="opacity-0 group-hover:opacity-100 w-6 h-6 grid place-items-center rounded-full hover:bg-white/10"><X size={12}/></button>
                           </div>
-                        ))}</div>
+                        )})}</div>
                       }
                     </div>
                   )}
@@ -497,11 +612,14 @@ export default function App(){
                     <div className="space-y-2">
                       <div className="flex justify-between items-center"><span className="text-xs opacity-60">{history.length} записей</span><button onClick={()=> setHistory([])} className="text-xs text-red-400 hover:underline">Очистить</button></div>
                       {history.length===0 ? <div className="text-sm opacity-40 text-center py-12">История пуста</div> :
-                        history.map(h=>(
-                          <button key={h.id} onClick={()=> navigate(h.url)} className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5">
-                            <div className="truncate text-sm">{h.title}</div><div className="truncate text-xs opacity-40">{h.url}</div>
+                        history.map(h=>{
+                          const f=faviconFor(h.url)
+                          return (
+                          <button key={h.id} onClick={()=> navigate(h.url)} className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 flex gap-2 items-start">
+                            {f? <img src={f} width={14} height={14} className="rounded-sm mt-0.5"/>: null}
+                            <div className="flex-1 min-w-0"><div className="truncate text-sm">{h.title}</div><div className="truncate text-xs opacity-40">{h.url}</div></div>
                           </button>
-                        ))
+                        )})
                       }
                     </div>
                   )}
@@ -530,7 +648,7 @@ export default function App(){
               <motion.div initial={{scale:0.98, y:8}} animate={{scale:1,y:0}} exit={{scale:0.98,y:8}} className="w-full max-w-[980px] mx-auto bg-[#121216] rounded-2xl border border-white/10 overflow-hidden flex flex-col max-h-[92vh]">
                 <div className="h-14 flex items-center gap-3 px-4 border-b border-white/5 shrink-0" style={{background: `linear-gradient(135deg, #ff253a, #ff6b8a)`}}>
                   <img src={LOGO} alt="K" className="w-8 h-8 rounded-xl object-cover bg-white" onError={e=> (e.currentTarget.style.display='none')}/>
-                  <div className="flex-1 text-white"><div className="font-bold leading-none" style={{fontFamily:'Unbounded'}}>KAYOR</div><div className="text-xs opacity-80">Настройки • 1.0.9</div></div>
+                  <div className="flex-1 text-white"><div className="font-bold leading-none" style={{fontFamily:'Unbounded'}}>KAYOR</div><div className="text-xs opacity-80">Настройки • 1.0.11</div></div>
                   <button onClick={()=> setShowSettings(false)} className="w-8 h-8 grid place-items-center rounded-full bg-white/15 hover:bg-white/25 text-white"><X size={16}/></button>
                 </div>
                 <div className="flex-1 flex overflow-hidden">
@@ -550,7 +668,6 @@ export default function App(){
                     ))}
                   </div>
                   <div className="flex-1 overflow-auto p-5 space-y-5">
-                    {/* mobile tabs */}
                     <div className="flex gap-1 overflow-x-auto md:hidden pb-2">
                       {['appearance','search','privacy','downloads','performance','system','about'].map(id=>(
                         <button key={id} onClick={()=> setSettingsTab(id as any)} className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${settingsTab===id?'bg-white text-zinc-900 border-white':'border-white/10'}`}>{id}</button>
@@ -618,7 +735,7 @@ export default function App(){
                           <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"><span className="text-sm font-medium">Анти-трекер</span><Toggle checked={trackerBlock} onChange={setTrackerBlock} /></div>
                           <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"><span className="text-sm font-medium">Только HTTPS</span><Toggle checked={httpsOnly} onChange={setHttpsOnly} /></div>
                           <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"><span className="text-sm font-medium">Do Not Track</span><Toggle checked={dnt} onChange={setDnt} /></div>
-                          <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-sm">Защита от фишинга, блокировка всплывающих окон, WebRTC защита — включены по умолчанию.</div>
+                          <div className="p-3 rounded-xl bg-white/5 border border-white/5 text-sm">Защита от фишинга, блокировка всплывающих окон, WebRTC защита — включены.</div>
                         </div>
                         <div className="space-y-2">
                           <div className="text-sm font-medium">Очистить данные</div>
@@ -630,7 +747,7 @@ export default function App(){
                         </div>
                         <div className="p-3 rounded-xl bg-[#ff253a]/10 border border-[#ff253a]/20 text-sm">
                           <div className="font-medium flex items-center gap-2"><ShieldCheck size={14}/> Пароли</div>
-                          <div className="opacity-70 text-xs mt-1">Менеджер паролей сохраняет логины локально (шифровано). В 1.0 будет синхронизация.</div>
+                          <div className="opacity-70 text-xs mt-1">Менеджер паролей сохраняет локально (шифровано). В 1.0 будет синхронизация.</div>
                         </div>
                       </div>
                     )}
@@ -644,8 +761,7 @@ export default function App(){
                         </div>
                         <div className="space-y-2 text-sm opacity-70">
                           <div>• Спрашивать куда сохранять — вкл.</div>
-                          <div>• Уведомления о завершении — вкл.</div>
-                          <div>• Авто-открытие папки — выкл.</div>
+                          <div>• Уведомления — вкл.</div>
                         </div>
                       </div>
                     )}
@@ -677,14 +793,14 @@ export default function App(){
                         <div className="p-4 rounded-xl bg-white text-zinc-900">
                           <div className="flex items-center gap-3">
                             <img src={LOGO} className="w-10 h-10 rounded-xl" onError={e=> (e.currentTarget.style.display='none')} />
-                            <div><div className="font-bold" style={{fontFamily:'Unbounded'}}>KAYOR Browser 1.0.9</div><div className="text-xs opacity-60">Chromium 124 • Electron 30 • {isElectron?'Native webview':'Web preview'}</div></div>
+                            <div><div className="font-bold" style={{fontFamily:'Unbounded'}}>KAYOR Browser 1.0.11</div><div className="text-xs opacity-60">Chromium 124 • Electron 30 • {isElectron?'Native webview':'Web preview'}</div></div>
                           </div>
                           <div className="mt-3 flex gap-2">
                             <button className="px-3 py-1.5 rounded-full bg-[#ff253a] text-white text-xs">Проверить обновления</button>
                             <button onClick={()=> window.open('https://github.com/kayorissss/KAYOR-BROWSER','_blank')} className="px-3 py-1.5 rounded-full bg-zinc-900 text-white text-xs flex items-center gap-1"><ExternalLink size={12}/> GitHub</button>
                           </div>
                         </div>
-                        <div className="text-xs opacity-50">Сборка Stable • Автообновления: вкл. • Каналы: Stable / Beta / Nightly (скоро)</div>
+                        <div className="text-xs opacity-50">Сборка Stable • Автообновления: вкл.</div>
                       </div>
                     )}
                   </div>
@@ -693,6 +809,7 @@ export default function App(){
             </motion.div>
           )}
         </AnimatePresence>
+        <style>{`@keyframes kayor-shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}`}</style>
       </motion.div>
     </div>
   )

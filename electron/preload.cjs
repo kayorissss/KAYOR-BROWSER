@@ -4,4 +4,8 @@ contextBridge.exposeInMainWorld('kayor', {
   platform: process.platform,
   isElectron: true,
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  windowControl: (action) => ipcRenderer.invoke('window-control', action),
+  minimize: () => ipcRenderer.invoke('window-control', 'minimize'),
+  maximize: () => ipcRenderer.invoke('window-control', 'maximize'),
+  close: () => ipcRenderer.invoke('window-control', 'close'),
 })

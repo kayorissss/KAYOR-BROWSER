@@ -1,13 +1,14 @@
 // KAYOR Browser — Electron main (Chromium native)
-const { app, BrowserWindow, nativeImage, shell, Menu, session } = require('electron')
+const { app, BrowserWindow, nativeImage, shell, Menu, session, ipcMain } = require('electron')
 const path = require('path')
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL
+let mainWin = null
 
 function createWindow() {
   const iconPath = isDev
     ? path.join(__dirname, '../public/kayorbrowse.png')
-    : path.join(__dirname, '../public/kayorbrowse.png') // inside asar, also works
+    : path.join(__dirname, '../public/kayorbrowse.png')
   const icon = nativeImage.createFromPath(iconPath)
 
   const win = new BrowserWindow({
@@ -18,8 +19,9 @@ function createWindow() {
     backgroundColor: '#0a0a0f',
     title: 'KAYOR Browser',
     icon,
+    frame: false,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0a0a0f', symbolColor: '#ffffff', height: 36 },
+    titleBarOverlay: false,
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -30,14 +32,13 @@ function createWindow() {
       sandbox: false,
     }
   })
+  mainWin = win
 
-  // Показать и развернуть после готовности — как обычный браузер (не F11, а maximized)
   win.once('ready-to-show', () => {
     win.maximize()
     win.show()
   })
 
-  // Блокировка рекламы (простой)
   session.defaultSession.webRequest.onBeforeRequest((details, cb) => {
     const block = ['doubleclick.net','googlesyndication.com','yandexadexchange.net']
     if (block.some(b => details.url.includes(b))) return cb({ cancel: true })
@@ -48,21 +49,15 @@ function createWindow() {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
     win.webContents.openDevTools({ mode: 'detach' })
   } else {
-    // В packaged app dist лежит внутри asar: app.asar/dist/index.html
-    // Используем app.getAppPath() чтобы корректно найти путь и для base:'./'
     const indexPath = path.join(app.getAppPath(), 'dist/index.html')
     win.loadFile(indexPath).catch(() => {
-      // fallback для старого пути
       win.loadFile(path.join(__dirname, '../dist/index.html'))
     })
-    // Открыть DevTools только если черный экран — для отладки, закомментируй в проде
-    // win.webContents.openDevTools({ mode: 'detach' })
     win.webContents.on('did-fail-load', (_e, code, desc, url) => {
       console.error('did-fail-load', code, desc, url)
     })
   }
 
-  // Внешние ссылки — в системный браузер
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('kayor://') || url.startsWith('file://')) return { action: 'allow' }
     shell.openExternal(url)
@@ -90,8 +85,18 @@ function createWindow() {
   ])
   Menu.setApplicationMenu(menu)
 
-  win.on('closed', () => app.quit())
+  win.on('closed', () => { mainWin=null; app.quit() })
 }
+
+ipcMain.handle('window-control', (_e, action)=>{
+  const win = mainWin || BrowserWindow.getFocusedWindow()
+  if(!win) return
+  if(action==='minimize') win.minimize()
+  else if(action==='maximize'){ if(win.isMaximized()) win.unmaximize(); else win.maximize() }
+  else if(action==='close') win.close()
+})
+
+ipcMain.handle('open-external', (_e, url)=> shell.openExternal(url))
 
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
