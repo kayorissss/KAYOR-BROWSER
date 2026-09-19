@@ -1,0 +1,65 @@
+name: Build KAYOR Browser
+
+on:
+  push:
+    branches: [arena/01a0ba41-kayor-browser, main]
+    tags: [v*]
+  workflow_dispatch:
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --x64 --publish=never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KAYOR-Windows
+          path: |
+            release/*.exe
+            release/*.msi
+          if-no-files-found: error
+          retention-days: 14
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --linux --x64 --publish=never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KAYOR-Linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: KAYOR-Windows
+          path: ./artifacts
+      - run: ls -lh artifacts/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
