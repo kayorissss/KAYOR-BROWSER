@@ -12,8 +12,19 @@ let mainWin = null
 let tray = null
 
 function createWindow() {
-  const iconPath = path.join(__dirname, '../public/kayorbrowse.png')
-  const icon = nativeImage.createFromPath(iconPath)
+  // иконка — берём из ресурсов вне asar чтобы tray работал везде (п.2)
+  let iconPath = path.join(app.getAppPath(), 'public/kayorbrowse.png')
+  try{ if(require('fs').existsSync(path.join(process.resourcesPath, 'public/kayorbrowse.png'))) iconPath = path.join(process.resourcesPath, 'public/kayorbrowse.png') }catch{}
+  try{ if(require('fs').existsSync(path.join(__dirname, '../public/kayorbrowse.png'))) iconPath = path.join(__dirname, '../public/kayorbrowse.png') }catch{}
+  if(app.isPackaged){
+    try{ const r1 = path.join(process.resourcesPath, 'app.asar/public/kayorbrowse.png'); if(require('fs').existsSync(r1)) iconPath = r1 }catch{}
+    try{ const r2 = path.join(process.resourcesPath, 'app/public/kayorbrowse.png'); if(require('fs').existsSync(r2)) iconPath = r2 }catch{}
+    try{ const r3 = path.join(app.getAppPath(), '../public/kayorbrowse.png'); if(require('fs').existsSync(r3)) iconPath = r3 }catch{}
+  }
+  let icon = nativeImage.createFromPath(iconPath)
+  if(icon.isEmpty()){
+    try{ icon = nativeImage.createFromPath(path.join(__dirname, '../public/kayorbrowse.png')) }catch{}
+  }
 
   const win = new BrowserWindow({
     width: 1360,
@@ -39,9 +50,14 @@ function createWindow() {
   })
   mainWin = win
 
-  // Tray — чтоб крестик не закрывал, а сворачивал (п.19.3)
+  // Tray — чтоб крестик не закрывал, а сворачивал (п.19.3) — фикс иконки везде (п.2)
   try{
-    tray = new Tray(icon.resize({width:16,height:16}))
+    let trayIcon = icon
+    try{ if(!trayIcon.isEmpty()) trayIcon = trayIcon.resize({width:16,height:16}) }catch{}
+    if(trayIcon.isEmpty()){
+      try{ trayIcon = nativeImage.createFromPath(path.join(app.getAppPath(), 'public/kayorbrowse.png')).resize({width:16,height:16}) }catch{}
+    }
+    tray = new Tray(trayIcon)
     const ctx = Menu.buildFromTemplate([
       { label:'Показать KAYOR', click:()=> win.show() },
       { label:'Новая вкладка', click:()=> win.webContents.send('new-tab') },
@@ -83,10 +99,25 @@ function createWindow() {
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('kayor://') || url.startsWith('file://')) return { action: 'allow' }
-    // не открывать внешне для ya.ru/search и тд — пусть webview обработает, поэтому deny + external только для явно внешних
-    if(url.includes('ya.ru')||url.includes('yandex')||url.includes('fandom')||url.includes('google')) return { action:'deny' }
+    // ya/yandex/fandom/google — открываем внутри как вкладку, не внешне (п.11,12,13)
+    if(url.includes('ya.ru')||url.includes('yandex')||url.includes('fandom')||url.includes('google')){
+      win.webContents.send('open-url', url)
+      return { action: 'deny' }
+    }
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // webview new-window -> вкладка внутри, а не новое окно BrowserWindow (п.13)
+  app.on('web-contents-created', (_event, contents)=>{
+    if(contents.getType()==='webview'){
+      contents.setWindowOpenHandler(({url})=>{
+        if(mainWin && !mainWin.isDestroyed()){
+          mainWin.webContents.send('open-url', url)
+        }
+        return { action:'deny' }
+      })
+    }
   })
 
   const menu = Menu.buildFromTemplate([
@@ -141,6 +172,10 @@ ipcMain.handle('clear-data', async (_e, type)=>{
   return true
 })
 
+const gotLock = app.requestSingleInstanceLock()
+if(!gotLock){ app.quit() } else {
+  app.on('second-instance', ()=>{ if(mainWin){ if(mainWin.isMinimized()) mainWin.restore(); mainWin.show(); mainWin.focus() } })
+}
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => { if (process.platform !== 'darwin' && app.isQuiting) app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('kayor', {
   close: () => ipcRenderer.invoke('window-control', 'close'),
   setDefaultBrowser: () => ipcRenderer.invoke('set-default-browser'),
   clearData: (type) => ipcRenderer.invoke('clear-data', type),
+  onOpenUrl: (cb) => ipcRenderer.on('open-url', (_e, url)=> cb(url)),
+  onNewTab: (cb) => ipcRenderer.on('new-tab', ()=> cb()),
 })

@@ -33,11 +33,38 @@ const DEFAULT_TILES: Tile[] = [
 ]
 
 const CITIES = [
-  {name:'Москва', temp:'18°', cond:'Солнечно', icon:'sun'},
-  {name:'Самара', temp:'22°', cond:'Переменная облачность', icon:'cloud'},
-  {name:'Санкт-Петербург', temp:'14°', cond:'Дождь', icon:'rain'},
-  {name:'Казань', temp:'8°', cond:'Снег', icon:'snow'},
-  {name:'Екатеринбург', temp:'19°', cond:'Облачно', icon:'cloud'},
+  {name:'Москва', temp:'+17°', cond:'Облачно', icon:'cloud'},
+  {name:'Самара', temp:'+19°', cond:'Ясно', icon:'sun'},
+  {name:'Казань', temp:'+16°', cond:'Дождь', icon:'rain'},
+  {name:'Сочи', temp:'+23°', cond:'Ясно', icon:'sun'},
+  {name:'СПб', temp:'+14°', cond:'Облачно', icon:'cloud'},
+  {name:'Екатеринбург', temp:'+12°', cond:'Снег', icon:'snow'},
+  {name:'Новосибирск', temp:'+10°', cond:'Облачно', icon:'cloud'},
+  {name:'Краснодар', temp:'+22°', cond:'Ясно', icon:'sun'},
+  {name:'Санкт-Петербург', temp:'+14°', cond:'Дождь', icon:'rain'},
+  {name:'Уфа', temp:'+15°', cond:'Облачно', icon:'cloud'},
+  {name:'Пермь', temp:'+13°', cond:'Дождь', icon:'rain'},
+  {name:'Воронеж', temp:'+18°', cond:'Ясно', icon:'sun'},
+  {name:'Волгоград', temp:'+20°', cond:'Ясно', icon:'sun'},
+  {name:'Красноярск', temp:'+11°', cond:'Снег', icon:'snow'},
+  {name:'Тюмень', temp:'+12°', cond:'Облачно', icon:'cloud'},
+  {name:'Саратов', temp:'+17°', cond:'Облачно', icon:'cloud'},
+  {name:'Тольятти', temp:'+18°', cond:'Ясно', icon:'sun'},
+  {name:'Ижевск', temp:'+14°', cond:'Дождь', icon:'rain'},
+  {name:'Барнаул', temp:'+12°', cond:'Облачно', icon:'cloud'},
+  {name:'Ульяновск', temp:'+16°', cond:'Ясно', icon:'sun'},
+  {name:'Иркутск', temp:'+9°', cond:'Снег', icon:'snow'},
+  {name:'Хабаровск', temp:'+11°', cond:'Облачно', icon:'cloud'},
+  {name:'Ярославль', temp:'+15°', cond:'Облачно', icon:'cloud'},
+  {name:'Владивосток', temp:'+13°', cond:'Дождь', icon:'rain'},
+  {name:'Томск', temp:'+10°', cond:'Облачно', icon:'cloud'},
+  {name:'Оренбург', temp:'+16°', cond:'Ясно', icon:'sun'},
+  {name:'Рязань', temp:'+16°', cond:'Облачно', icon:'cloud'},
+  {name:'Киров', temp:'+13°', cond:'Дождь', icon:'rain'},
+  {name:'Тула', temp:'+16°', cond:'Облачно', icon:'cloud'},
+  {name:'Кижи', temp:'+12°', cond:'Облачно', icon:'cloud'},
+  {name:'Суздаль', temp:'+15°', cond:'Ясно', icon:'sun'},
+  {name:'Байкал', temp:'+8°', cond:'Снег', icon:'snow'},
 ]
 
 const LOGO = "kayorbrowse.png"
@@ -113,6 +140,7 @@ export default function App(){
   const [showTileModal, setShowTileModal] = useState(false)
   const [tileForm, setTileForm] = useState({title:'',url:''})
   const [city, setCity] = useState(()=> localStorage.getItem('kayor_city')||'Москва')
+  const [citySearch, setCitySearch] = useState('')
   const [showCityPicker, setShowCityPicker] = useState(false)
   const [showBookmarkModal, setShowBookmarkModal] = useState<{url:string,title:string}|null>(null)
   const [bookmarkFolderId, setBookmarkFolderId] = useState('default')
@@ -155,6 +183,13 @@ export default function App(){
   useEffect(()=> localStorage.setItem('kayor_wp', wallpaperId),[wallpaperId])
   useEffect(()=> localStorage.setItem('kayor_tiles', JSON.stringify(tiles)),[tiles])
   useEffect(()=> localStorage.setItem('kayor_city', city),[city])
+
+  // слушать открытие url из main (webview new-window -> вкладка, а не окно) п.13
+  useEffect(()=>{
+    const k:any = (window as any).kayor
+    if(k?.onOpenUrl) k.onOpenUrl((url:string)=> createTab(url))
+    if(k?.onNewTab) k.onNewTab(()=> createTab())
+  },[])
   useEffect(()=> localStorage.setItem('kayor_theme', theme),[theme])
   useEffect(()=> localStorage.setItem('kayor_bm_bar', showBookmarksBar?'1':'0'),[showBookmarksBar])
   useEffect(()=> { localStorage.setItem('kayor_adblock', adBlock?'1':'0') },[adBlock])
@@ -201,7 +236,7 @@ export default function App(){
     const onTitle = (e:any)=>{ if(e.title) setTabs(ts=> ts.map(t=> t.id===activeId ? {...t, title:e.title} : t)) }
     const onNewWindow = (e:any)=>{
       const url = e.url
-      if(url){ e.preventDefault?.(); createTab(url) }
+      if(url){ try{ e.preventDefault() }catch{}; createTab(url) }
     }
     const onContextMenu = (e:any)=>{
       const p=e.params
@@ -330,13 +365,11 @@ export default function App(){
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&display=swap'); :root{--accent:#ff253a} webview{ display:flex; width:100%; height:100%; }`}</style>
 
       {/* контейнер */}
-      <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{duration: animations?0.2:0}} className={`flex-1 flex flex-col overflow-hidden ${incognito ? 'bg-[#1a1030]' : isLight ? 'bg-[#f6f6f7] text-zinc-900' : 'bg-[#0a0a0f] text-zinc-100'} ${incognito ? 'ring-2 ring-violet-500/20' : ''}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${incognito ? 'bg-[#1a1030]' : isLight ? 'bg-[#f6f6f7] text-zinc-900' : 'bg-[#0a0a0f] text-zinc-100'} ${incognito ? 'ring-2 ring-violet-500/20' : ''}`}>
 
         {/* TAB BAR — активная заметнее, неактивные затемнены */}
         <div className={`h-10 flex items-center gap-1 px-2 shrink-0 border-b ${compactMode?'h-8':''} ${incognito ? 'bg-[#1a1030] border-violet-900/30' : isLight ? 'bg-[#ffffff] border-black/5' : 'bg-[#0f0f14] border-white/5'}`} style={{ WebkitAppRegion: 'drag' } as any}>
-          <div className="flex items-center gap-1.5 shrink-0 ml-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
-            <img src={LOGO} alt="KAYOR" className="w-6 h-6 rounded-md object-cover" onError={(e)=> (e.currentTarget.style.display='none')} />
-          </div>
+
           <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-none ml-2" style={{ WebkitAppRegion: 'no-drag' } as any}>
             {tabs.map(tab=>{
               const isActive = activeId===tab.id
@@ -346,7 +379,7 @@ export default function App(){
               <motion.div
                 key={tab.id}
                 layout={animations}
-                initial={{opacity:0, y:-6}} animate={{opacity:1, y:0}} transition={{duration:0.18}}
+                initial={{opacity:0, y:0}} animate={{opacity:1, y:0}} transition={{duration:0}}
                 onClick={()=> {setActiveId(tab.id); setLoadError(null)}}
                 onMouseDown={e=> { if(e.button===1){ e.preventDefault(); closeTab(tab.id)} }}
                 onContextMenu={e=> { e.preventDefault(); setShowTabMenu({x:e.clientX, y:e.clientY, id:tab.id})}}
@@ -386,8 +419,8 @@ export default function App(){
           </div>
 
           <div className="flex items-center gap-1 ml-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-            <button onClick={()=> setIncognito(!incognito)} className={`flex items-center gap-1 px-2.5 h-7 rounded-full text-xs border transition ${incognito?'bg-violet-600 text-white border-violet-500':'bg-white/5 border-white/10 hover:bg-white/10'} ${isLight && !incognito ? 'bg-black/5 border-black/10 hover:bg-black/10 text-zinc-700' : ''}`}>
-              <EyeOff size={12}/> {incognito?'Инкогнито':'Обычный'}
+            <button onClick={()=> setIncognito(!incognito)} title={incognito?'Инкогнито':'Обычный режим'} className={`w-7 h-7 grid place-items-center rounded-full border transition ${incognito?'bg-violet-600 text-white border-violet-500':'bg-white/5 border-white/10 hover:bg-white/10'} ${isLight && !incognito ? 'bg-black/5 border-black/10 hover:bg-black/10 text-zinc-700' : ''}`}>
+              {incognito ? <EyeOff size={14}/> : <Globe size={14}/>}
             </button>
             <button onClick={()=> setShowMenu(!showMenu)} className={`w-7 h-7 grid place-items-center rounded-full ${isLight?'hover:bg-black/5':'hover:bg-white/10'}`} style={{WebkitAppRegion:'no-drag'} as any}><span className="text-[16px] leading-none">⋮</span></button>
             <div className="flex items-center gap-0.5 ml-1">
@@ -434,7 +467,7 @@ export default function App(){
               placeholder="Поиск или адрес • /calc 2+2 • /translate привет"
               className="flex-1 bg-transparent outline-none text-[13px] placeholder:text-zinc-500"
             />
-            <span className="hidden sm:flex items-center text-[10px] opacity-30 border border-current rounded px-1 py-0.5">↵</span>
+
             <button onClick={()=>{
               if(!activeTab?.url || activeTab.url.startsWith('kayor://')) return setToast('Нечего добавлять')
               setShowBookmarkModal({url:activeTab.url, title:activeTab.title})
@@ -498,17 +531,30 @@ export default function App(){
           </div>
         )}
 
-        {/* Lock popup */}
+        {/* Lock popup — как на скрине Pinterest, тёмный */}
         {lockPopup && (
-          <div className="absolute left-3 top-[92px] z-30 w-80 rounded-2xl border shadow-2xl p-4 bg-white border-black/10 text-zinc-900">
-            <div className="flex items-center gap-2 font-medium"><ShieldCheck size={16} className="text-emerald-500"/> Соединение защищено</div>
-            <div className="text-xs opacity-60 mt-1 break-all">{activeTab?.url}</div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2 rounded-xl bg-black/5">🔒 HTTPS включён</div>
-              <div className="p-2 rounded-xl bg-black/5">🛡️ Трекеры блок.</div>
+          <>
+            <div className="fixed inset-0 z-20" onClick={()=> setLockPopup(false)}/>
+            <div className="absolute left-3 top-[92px] z-30 w-[320px] rounded-xl border shadow-2xl overflow-hidden bg-[#1e1e26] border-white/10 text-white">
+              <div className="px-4 py-3 border-b border-white/5">
+                <div className="text-[13px] font-medium truncate">{(() => { try{ return new URL(activeTab?.url||'').hostname }catch{ return activeTab?.url }})()}</div>
+                <div className="flex items-center gap-1.5 text-xs mt-1"><Lock size={12} className="text-emerald-400"/> <span className="opacity-80">Подключение защищено</span> <ChevronRight size={12} className="opacity-40"/></div>
+              </div>
+              <div className="p-2 space-y-1">
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/5">
+                  <div className="flex items-center gap-3"><span className="w-6 h-6 grid place-items-center rounded-full bg-white/5"><Shield size={12}/></span><div><div className="text-sm leading-none">Уведомления</div><div className="text-xs opacity-50">Заблокировано автоматически</div></div></div>
+                  <div className="w-9 h-5 rounded-full bg-white/10 p-0.5 flex justify-start"><span className="w-4 h-4 rounded-full bg-white/60"/></div>
+                </div>
+                <button onClick={()=> setLockPopup(false)} className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/5 text-sm text-[#4fc3f7]">Сбросить разрешение</button>
+                <div className="h-px bg-white/5 my-1"/>
+                <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm"><span className="flex items-center gap-3"><HardDrive size={14} className="opacity-60"/> Файлы cookie и данные сайтов</span><ChevronRight size={14} className="opacity-40"/></button>
+                <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm"><span className="flex items-center gap-3"><Settings size={14} className="opacity-60"/> Настройки сайтов</span><ExternalLink size={14} className="opacity-40"/></button>
+                <div className="h-px bg-white/5 my-1"/>
+                <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/5 text-sm"><span className="flex items-center gap-2"><Info size={14} className="opacity-60"/> Об этой странице</span><ExternalLink size={14} className="opacity-40"/></button>
+                <div className="text-xs opacity-40 px-3 pb-2">Pinterest — социальная сеть...</div>
+              </div>
             </div>
-            <button onClick={()=> setLockPopup(false)} className="mt-3 w-full py-1.5 rounded-full bg-zinc-900 text-white text-xs">Закрыть</button>
-          </div>
+          </>
         )}
 
         {/* Main */}
@@ -518,7 +564,7 @@ export default function App(){
               incognito ? (
                 <div className="flex-1 overflow-auto relative flex flex-col items-center justify-center p-8 bg-[#1a1030]">
                   <div className="absolute inset-0 opacity-10" style={{background:`radial-gradient(800px 400px at 50% 0%, #7c3aed 0%, transparent 60%)`}}/>
-                  <motion.div initial={{opacity:0, y:12}} animate={{opacity:1, y:0}} transition={{duration: animations?0.5:0}} className="w-full max-w-[560px] flex flex-col items-center gap-6 text-center relative">
+                  <motion.div initial={{opacity:0, y:0}} animate={{opacity:1, y:0}} transition={{duration:0}} className="w-full max-w-[560px] flex flex-col items-center gap-6 text-center relative">
                     <div className="w-20 h-20 rounded-3xl bg-violet-600 grid place-items-center shadow-xl"><EyeOff size={32} className="text-white"/></div>
                     <div>
                       <h1 className="text-[26px] font-extrabold tracking-tight text-white" style={{fontFamily:'Unbounded'}}>Инкогнито</h1>
@@ -532,9 +578,9 @@ export default function App(){
                   </motion.div>
                 </div>
               ) : (
-              <div className="flex-1 overflow-auto relative flex flex-col items-center p-6 md:p-8" style={{background: wallpaper.bg}}>
+              <div className="flex-1 overflow-auto relative flex flex-col items-center justify-center p-6 md:p-8" style={{background: wallpaper.bg}}>
                 {/* Время вместо лого */}
-                <motion.div initial={{opacity:0, y:12}} animate={{opacity:1, y:0}} transition={{duration: animations?0.5:0, delay:0.1}} className="w-full max-w-[640px] flex flex-col items-center gap-4 mt-4">
+                <motion.div initial={{opacity:0, y:0}} animate={{opacity:1, y:0}} transition={{duration:0}} className="w-full max-w-[640px] flex flex-col items-center gap-4">
                   <div className="text-center">
                     <div className="text-[56px] font-extrabold tracking-tight leading-none text-white" style={{fontFamily:'Unbounded', textShadow:'0 2px 20px rgba(0,0,0,.2)'}}>{timeNow.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
                     <div className={`text-sm mt-1 capitalize ${isLight?'text-zinc-700':'text-white/80'}`}>{timeNow.toLocaleDateString('ru-RU',{weekday:'long'})} • {timeNow.toLocaleDateString('ru-RU',{day:'numeric', month:'long'})}</div>
@@ -578,30 +624,46 @@ export default function App(){
                     <div className={`rounded-2xl backdrop-blur-xl border p-3 flex items-center gap-3 ${isLight?'bg-white border-black/5 text-zinc-900':'bg-white/10 border-white/10 text-white'}`}>
                       <div className={`w-10 h-10 rounded-xl grid place-items-center ${isLight?'bg-zinc-900 text-white':'bg-white text-zinc-900'}`}><Clock size={18}/></div>
                       <div>
-                        <div className="text-[13px] opacity-70">Сейчас</div>
-                        <div className="text-[15px] font-bold leading-none">{city} • {weather.temp}</div>
+                        <div className="text-[13px] opacity-70">Время</div>
+                        <div className="text-[15px] font-bold leading-none">{timeNow.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
                       </div>
-                      <button onClick={()=> setShowCityPicker(!showCityPicker)} className={`ml-auto w-7 h-7 grid place-items-center rounded-full ${isLight?'bg-black/5':'bg-white/10'}`}><ChevronDown size={14}/></button>
                     </div>
-                    <div className="rounded-2xl bg-white border border-black/5 p-3 flex items-center gap-3 text-zinc-900 relative overflow-hidden">
+                    <div className="rounded-2xl bg-white border border-black/5 p-3 flex items-center gap-3 text-zinc-900 relative">
                       <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 grid place-items-center text-white">
                         {weather.icon==='sun' && <Sun size={18}/>}
                         {weather.icon==='cloud' && <Cloud size={18}/>}
                         {weather.icon==='rain' && <CloudRain size={18}/>}
                         {weather.icon==='snow' && <Snowflake size={18}/>}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <div className="text-[15px] font-bold leading-none">{weather.temp} • {weather.cond}</div>
                         <div className="text-xs opacity-60 flex items-center gap-1"><MapPin size={10}/> {city} • Влажность 42%</div>
                       </div>
+                      <button onClick={()=> { setCitySearch(''); setShowCityPicker(!showCityPicker)}} className="w-7 h-7 grid place-items-center rounded-full bg-black/5 hover:bg-black/10"><ChevronDown size={14}/></button>
                       {showCityPicker && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-black/10 rounded-2xl shadow-xl overflow-hidden z-20">
-                          {CITIES.map(c=>(
-                            <button key={c.name} onClick={()=> {setCity(c.name); setShowCityPicker(false)}} className={`w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-center justify-between ${city===c.name?'bg-black/5 font-medium':''}`}>
-                              {c.name} <span className="opacity-50">{c.temp}</span>
+                        <>
+                        <div className="fixed inset-0 z-10" onClick={()=> {setShowCityPicker(false); setCitySearch('')}}/>
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-black/10 rounded-2xl shadow-xl overflow-hidden z-20 max-h-72 flex flex-col">
+                          <div className="p-2 border-b border-black/5">
+                            <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-black/5 border border-black/5">
+                              <Search size={12} className="opacity-40"/><input autoFocus value={citySearch} onChange={e=> setCitySearch(e.target.value)} placeholder="Поиск города, села..." className="flex-1 bg-transparent outline-none text-sm placeholder:text-zinc-400" />
+                              {citySearch && <button onClick={()=> setCitySearch('')} className="opacity-40 hover:opacity-80"><X size={12}/></button>}
+                            </div>
+                          </div>
+                          <div className="overflow-auto flex-1">
+                          {CITIES.filter(c=> !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase())).map(c=>(
+                            <button key={c.name} onClick={()=> {setCity(c.name); setShowCityPicker(false); setCitySearch('')}} className={`w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-center justify-between ${city===c.name?'bg-black/5 font-medium':''}`}>
+                              {c.name} <span className="opacity-50">{c.temp} • {c.cond}</span>
                             </button>
                           ))}
+                          {CITIES.filter(c=> !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase())).length===0 && citySearch && (
+                            <button onClick={()=> {setCity(citySearch); setShowCityPicker(false); setCitySearch('')}} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-center gap-2">
+                              <Plus size={12}/> Использовать “{citySearch}”
+                            </button>
+                          )}
+                          </div>
                         </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -652,11 +714,14 @@ export default function App(){
             {/* Link context menu */}
             {linkMenu && (
               <div className="fixed inset-0 z-40" onClick={()=> setLinkMenu(null)}>
-                <div style={{left:linkMenu.x, top:linkMenu.y}} className="absolute w-56 rounded-xl border shadow-xl py-1 bg-white border-black/10 text-sm">
+                <div style={{left:linkMenu.x, top:linkMenu.y}} className="absolute w-56 rounded-xl border shadow-xl py-1 bg-[#1e1e26] border-white/10 text-sm text-white">
                   <div className="px-3 py-1.5 text-xs opacity-50 truncate max-w-[220px]">{linkMenu.url}</div>
-                  <button onClick={()=>{createTab(linkMenu.url); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-black/5 flex items-center gap-2"><ExternalLink size={12}/> Открыть в новой вкладке</button>
-                  <button onClick={()=>{navigator.clipboard.writeText(linkMenu.url); setToast('Ссылка скопирована'); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-black/5 flex items-center gap-2"><Copy size={12}/> Копировать ссылку</button>
-                  <button onClick={()=>{navigator.clipboard.writeText(linkMenu.url); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-black/5 flex items-center gap-2"><Globe size={12}/> Копировать адрес</button>
+                  <button onClick={()=>{createTab(linkMenu.url); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-2"><ExternalLink size={12}/> Открыть в новой вкладке</button>
+                  <button onClick={()=>{navigator.clipboard.writeText(linkMenu.url); setToast('Ссылка скопирована'); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-2"><Copy size={12}/> Копировать ссылку</button>
+                  <button onClick={()=>{navigator.clipboard.writeText(linkMenu.url); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-2"><Globe size={12}/> Копировать адрес</button>
+                  <div className="h-px bg-white/5 my-1"/>
+                  <button onClick={()=>{ const a=document.createElement('a'); a.href=linkMenu.url; a.download=''; a.click(); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-2"><Download size={12}/> Скачать изображение</button>
+                  <button onClick={()=>{navigator.clipboard.writeText(linkMenu.url); setToast('Скопировано'); setLinkMenu(null)}} className="w-full text-left px-3 py-2 hover:bg-white/5 flex items-center gap-2"><Copy size={12}/> Копировать изображение</button>
                 </div>
               </div>
             )}
@@ -674,7 +739,9 @@ export default function App(){
 
             {/* 3-dot menu — без версии */}
             {showMenu && (
-              <div className="absolute right-2 top-2 w-72 rounded-2xl border shadow-2xl z-40 bg-[#1e1e26] border-white/10 overflow-hidden">
+              <>
+                <div className="fixed inset-0 z-30" onClick={()=> setShowMenu(false)}/>
+                <div className="absolute right-2 top-2 w-72 rounded-2xl border shadow-2xl z-40 bg-[#1e1e26] border-white/10 overflow-hidden">
                 <div className="p-2 space-y-1">
                   <button onClick={()=>{createTab(); setShowMenu(false)}} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 text-left text-sm"><Plus size={14}/> Новая вкладка <span className="ml-auto text-xs opacity-40">Ctrl+T</span></button>
                   <button onClick={()=>{setIncognito(!incognito); setShowMenu(false)}} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 text-left text-sm"><EyeOff size={14}/> {incognito?'Обычный режим':'Инкогнито'}</button>
@@ -686,6 +753,7 @@ export default function App(){
                   <button onClick={()=>{setShowSettings(true); setShowMenu(false)}} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 text-left text-sm"><Settings size={14}/> Настройки</button>
                 </div>
               </div>
+              </>
             )}
           </div>
 
@@ -759,13 +827,13 @@ export default function App(){
           </AnimatePresence>
         </div>
 
-        {/* Bookmark add modal — выбор папки */}
+        {/* Bookmark add modal — темный, по центру */}
         {showBookmarkModal && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={()=> setShowBookmarkModal(null)}>
-            <div onClick={e=> e.stopPropagation()} className="w-full max-w-sm bg-white rounded-2xl p-4 text-zinc-900 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={()=> setShowBookmarkModal(null)}>
+            <div onClick={e=> e.stopPropagation()} className="w-full max-w-sm bg-[#1e1e26] border border-white/10 rounded-2xl p-4 text-white shadow-xl">
               <div className="font-bold" style={{fontFamily:'Unbounded'}}>Добавить закладку</div>
               <div className="text-xs opacity-60 mt-1 break-all">{showBookmarkModal.url}</div>
-              <input value={showBookmarkModal.title} onChange={e=> setShowBookmarkModal({...showBookmarkModal, title:e.target.value})} className="mt-3 w-full px-3 py-2 rounded-xl border border-black/10 text-sm" placeholder="Название"/>
+              <input value={showBookmarkModal.title} onChange={e=> setShowBookmarkModal({...showBookmarkModal, title:e.target.value})} className="mt-3 w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/40" placeholder="Название"/>
               <select value={bookmarkFolderId} onChange={e=> setBookmarkFolderId(e.target.value)} className="mt-2 w-full px-3 py-2 rounded-xl border border-black/10 text-sm">
                 {folders.map(f=> <option key={f.id} value={f.id}>{f.title}</option>)}
               </select>
@@ -785,13 +853,13 @@ export default function App(){
           </div>
         )}
 
-        {/* Tile modal — 10) */}
+        {/* Tile modal — темный, по центру */}
         {showTileModal && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={()=> setShowTileModal(false)}>
-            <div onClick={e=> e.stopPropagation()} className="w-full max-w-sm bg-white rounded-2xl p-4 text-zinc-900 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={()=> setShowTileModal(false)}>
+            <div onClick={e=> e.stopPropagation()} className="w-full max-w-sm bg-[#1e1e26] border border-white/10 rounded-2xl p-4 text-white shadow-xl">
               <div className="font-bold" style={{fontFamily:'Unbounded'}}>{editingTile?'Изменить плитку':'Добавить плитку'}</div>
-              <input value={tileForm.title} onChange={e=> setTileForm({...tileForm, title:e.target.value})} placeholder="Название (YouTube)" className="mt-3 w-full px-3 py-2 rounded-xl border border-black/10 text-sm"/>
-              <input value={tileForm.url} onChange={e=> setTileForm({...tileForm, url:e.target.value})} placeholder="Ссылка https://..." className="mt-2 w-full px-3 py-2 rounded-xl border border-black/10 text-sm"/>
+              <input value={tileForm.title} onChange={e=> setTileForm({...tileForm, title:e.target.value})} placeholder="Название (YouTube)" className="mt-3 w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/40"/>
+              <input value={tileForm.url} onChange={e=> setTileForm({...tileForm, url:e.target.value})} placeholder="Ссылка https://..." className="mt-2 w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/40"/>
               <div className="flex gap-2 mt-4">
                 <button onClick={()=> {setShowTileModal(false); setEditingTile(null)}} className="flex-1 py-2 rounded-full border border-black/10">Отмена</button>
                 <button onClick={tileModalSave} className="flex-1 py-2 rounded-full bg-[#ff253a] text-white">{editingTile?'Сохранить':'Добавить'}</button>
@@ -800,10 +868,10 @@ export default function App(){
           </div>
         )}
 
-        {/* Confirm */}
+        {/* Confirm — темный */}
         {confirmClear && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={()=> setConfirmClear(null)}>
-            <div onClick={e=> e.stopPropagation()} className="bg-white rounded-2xl p-5 max-w-sm w-full text-zinc-900">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={()=> setConfirmClear(null)}>
+            <div onClick={e=> e.stopPropagation()} className="bg-[#1e1e26] border border-white/10 rounded-2xl p-5 max-w-sm w-full text-white">
               <div className="font-bold">Очистить {confirmClear==='history'?'историю':'всё'}?</div>
               <div className="text-sm opacity-60 mt-1">Действие нельзя отменить.</div>
               <div className="flex gap-2 mt-4">
@@ -837,7 +905,7 @@ export default function App(){
                       {id:'system',label:'Система',icon:Cpu, tip:'Браузер по умолчанию, язык'},
                       {id:'about',label:'О браузере',icon:Info, tip:'Версия и обновления'},
                     ].map(t=>(
-                      <button key={t.id} onClick={()=> setSettingsTab(t.id as any)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-left group ${settingsTab===t.id? (isLight?'bg-zinc-900 text-white':'bg-white text-zinc-900'):'hover:bg-black/5'}`}>
+                      <button key={t.id} onClick={()=> setSettingsTab(t.id as any)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-left group ${settingsTab===t.id? (isLight?'bg-zinc-900 text-white':'bg-white text-zinc-900'):(isLight?'hover:bg-black/5':'hover:bg-white/5')}`}>
                         <t.icon size={14}/> <span className="flex-1">{t.label}</span> <span className="opacity-0 group-hover:opacity-100"><Tooltip text={t.tip}/></span>
                       </button>
                     ))}
@@ -845,7 +913,7 @@ export default function App(){
                   <div className={`flex-1 overflow-auto p-5 space-y-5 ${isLight?'bg-white':'bg-[#121216]'}`}>
                     <div className="flex gap-1 overflow-x-auto md:hidden pb-2">
                       {['appearance','search','privacy','downloads','performance','system','about'].map(id=>(
-                        <button key={id} onClick={()=> setSettingsTab(id as any)} className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${settingsTab===id?'bg-zinc-900 text-white border-zinc-900':'border-black/10'}`}>{id}</button>
+                        <button key={id} onClick={()=> setSettingsTab(id as any)} className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${settingsTab===id? (isLight?'bg-zinc-900 text-white border-zinc-900':'bg-white text-zinc-900 border-white'):(isLight?'border-black/10':'border-white/10 text-white/70')}`}>{id}</button>
                       ))}
                     </div>
 
@@ -936,7 +1004,7 @@ export default function App(){
                         <h2 className="text-lg font-bold flex items-center gap-2" style={{fontFamily:'Unbounded'}}>Загрузки <Tooltip text="Где сохранять файлы"/></h2>
                         <div className={`p-3 rounded-xl border flex items-center justify-between ${isLight?'bg-black/5 border-black/5':'bg-white/5 border-white/5'}`}>
                           <span className="text-sm flex items-center gap-2"><FolderOpen size={14}/> Папка: Загрузки</span>
-                          <button onClick={()=> setToast('Выбор папки — в 1.0.12 (пока Загрузки)')} className="px-3 py-1 rounded-full bg-zinc-900 text-white text-xs">Изменить</button>
+                          <button onClick={()=> setToast('Выбор папки — в 1.0.13 (пока Загрузки)')} className="px-3 py-1 rounded-full bg-zinc-900 text-white text-xs">Изменить</button>
                         </div>
                         <div className="space-y-2">
                           <div className={`flex items-center justify-between p-3 rounded-xl border ${isLight?'bg-black/5 border-black/5':'bg-white/5 border-white/5'}`}><span className="text-sm flex items-center gap-2">Спрашивать куда сохранять <Tooltip text="Показывать диалог перед загрузкой"/></span><Toggle checked={askDownload} onChange={setAskDownload}/></div>
@@ -982,10 +1050,10 @@ export default function App(){
                     {settingsTab==='about' && (
                       <div className="space-y-4">
                         <h2 className="text-lg font-bold" style={{fontFamily:'Unbounded'}}>О браузере</h2>
-                        <motion.div initial={{y:8,opacity:0}} animate={{y:0,opacity:1}} className={`p-4 rounded-2xl border ${isLight?'bg-white border-black/5':'bg-white border-black/5 text-zinc-900'}`}>
+                        <motion.div initial={{y:0,opacity:0}} animate={{y:0,opacity:1}} className={`p-4 rounded-2xl border ${isLight?'bg-white border-black/5 text-zinc-900':'bg-[#1e1e26] border-white/10 text-white'}`}>
                           <div className="flex items-center gap-3">
                             <img src={LOGO} className="w-10 h-10 rounded-xl object-cover shadow" onError={e=> (e.currentTarget.style.display='none')} />
-                            <div><div className="font-bold" style={{fontFamily:'Unbounded'}}>KAYOR Browser 1.0.12</div><div className="text-xs opacity-60">Chromium 124 • Electron 30 • {isElectron?'Native webview':'Web preview'}</div></div>
+                            <div><div className="font-bold" style={{fontFamily:'Unbounded'}}>KAYOR Browser 1.0.13</div><div className="text-xs opacity-60">Chromium 124 • Electron 30 • {isElectron?'Native webview':'Web preview'}</div></div>
                           </div>
                           <div className="mt-3 flex gap-2">
                             <button onClick={()=> setToast('Обновлений нет — у тебя последняя')} className="px-3 py-1.5 rounded-full bg-[#ff253a] text-white text-xs flex items-center gap-1"><Download size={12}/> Проверить обновления</button>
@@ -1012,7 +1080,7 @@ export default function App(){
           )}
         </AnimatePresence>
         <style>{`@keyframes kayor-shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}`}</style>
-      </motion.div>
+      </div>
     </div>
   )
 }
